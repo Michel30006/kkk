@@ -1,0 +1,87 @@
+# Despliegue en Render (plan gratuito) — SOLO PARA EVALUACIÓN.
+#
+# Limitaciones verificadas del plan gratuito (2026-10-26):
+#   * 0,1 CPU y 512 MB de RAM por servicio web;
+#   * el servicio se duerme tras 15 min sin tráfico entrante;
+#   * disco efímero (no sirve para entregar ficheros entre A y B);
+#   * PostgreSQL gratuito de 1 GB que caduca a los 30 días;
+#   * los servicios gratuitos no reciben tráfico por red privada, por eso A y
+#     B comparten la base de datos pública de Render.
+#
+# INTERNAL_TOKEN debe ser el MISMO valor en los dos servicios: Render no
+# permite generar uno y compartirlo, así que se marca `sync: false` y se pega
+# a mano. Los valores `sync: false` restantes también se rellenan en el panel.
+databases:
+  - name: ing-inversa-db
+    plan: free
+    databaseName: ing_inversa
+    user: ing_inversa
+    region: oregon
+
+services:
+  - type: web
+    name: ing-inversa-a
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./deploy/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: SERVICE
+        value: server_a
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ing-inversa-db
+          property: connectionString
+      # Mínimo 16 caracteres; el mismo en A y B.
+      - key: INTERNAL_TOKEN
+        sync: false
+      # Opcional: https://ing-inversa-b.onrender.com (o el nombre real).
+      - key: SERVER_B_URL
+        sync: false
+      - key: MAX_VIDEO_BYTES
+        value: "26214400"
+      - key: MAX_CONCURRENT_JOBS
+        value: "1"
+      - key: PING_INTERVAL_SECONDS
+        value: "600"
+
+  - type: web
+    name: ing-inversa-b
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./deploy/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: SERVICE
+        value: server_b
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ing-inversa-db
+          property: connectionString
+      - key: INTERNAL_TOKEN
+        sync: false
+      # Opcional: https://ing-inversa-a.onrender.com (o el nombre real).
+      - key: SERVER_A_URL
+        sync: false
+      # "mock" permite desplegar sin credenciales. En Render el outbox es
+      # disco efímero del contenedor de B: sirve para comprobar el pipeline,
+      # pero ningún cliente puede recoger las tramas. Cambiar a "todus"
+      # cuando las cuentas estén autorizadas y TODUS_* estén configuradas.
+      - key: TRANSPORT
+        value: mock
+      - key: MOCK_OUTBOX
+        value: /tmp/tds-outbox
+      - key: TODUS_USERNAME
+        sync: false
+      - key: TODUS_PASSWORD
+        sync: false
+      - key: TODUS_TOKEN
+        sync: false
+      - key: MAX_CONCURRENT_JOBS
+        value: "1"
+      - key: PING_INTERVAL_SECONDS
+        value: "600"

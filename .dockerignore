@@ -1,0 +1,11 @@
+# Artefactos que no deben enviarse al contexto de Docker.
+.git
+.gitignore
+build
+*.zip
+.env
+*.log
+investigacion/
+uploads/
+__pycache__/
+*.pyc

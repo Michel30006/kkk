@@ -1,0 +1,63 @@
+# Entorno local completo: PostgreSQL + Servidor A + Servidor B (mock).
+# Uso:
+#   docker compose -f deploy/docker-compose.yml up --build
+#   curl -X POST localhost:8080/jobs -H 'X-Internal-Token: ...' ...
+# El outbox del transporte mock queda dentro del contenedor de B:
+#   docker compose -f deploy/docker-compose.yml exec server_b ls /tmp/tds-outbox
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: tds
+      POSTGRES_PASSWORD: tds
+      POSTGRES_DB: ing_inversa
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tds -d ing_inversa"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  server_a:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    environment:
+      SERVICE: server_a
+      PORT: "8080"
+      DATABASE_URL: postgresql://tds:tds@db:5432/ing_inversa
+      INTERNAL_TOKEN: cambio-obligatorio-1234567890
+      SERVER_B_URL: http://server_b:8080
+      # Sólo para la prueba local con un servidor de ficheros del host.
+      ALLOW_HTTP: "1"
+      ALLOW_PRIVATE_NETWORKS: "1"
+      MAX_VIDEO_BYTES: "26214400"
+      PING_INTERVAL_SECONDS: "60"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+  server_b:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    environment:
+      SERVICE: server_b
+      PORT: "8080"
+      DATABASE_URL: postgresql://tds:tds@db:5432/ing_inversa
+      INTERNAL_TOKEN: cambio-obligatorio-1234567890
+      SERVER_A_URL: http://server_a:8080
+      TRANSPORT: mock
+      MOCK_OUTBOX: /tmp/tds-outbox
+      PING_INTERVAL_SECONDS: "60"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8081:8080"
+
+volumes:
+  pgdata:

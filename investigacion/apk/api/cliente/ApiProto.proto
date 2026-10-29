@@ -1,0 +1,171 @@
+// ApiProto.proto — reconstrucción del esquema protobuf de la app ToDus
+// Origen: cu/todus/proto/ApiProto — protobuf-lite (sin FileDescriptorProto embebido)
+// Números: constantes <CAMPO>_FIELD_NUMBER generadas por protoc.
+// Tipos: getters generados + anotación Signature (genéricos reales).
+
+syntax = "proto3";
+
+package cu.todus.proto;
+message ChannelsSendMessageReq {
+  string channelUsername = 1;
+  string userDomain = 2;
+  string message = 3;
+}
+message CheckChannelsVersionReq {
+  map<string, string> channelVer = 2;
+}
+message CheckChannelsVersionResp {
+  map<string, string> verAff = 1;
+  message VerAff {
+    string aff = 2;
+  }
+}
+message CreateChannelReq {
+  map<string, string> config = 1;
+}
+message CreateChannelResp {
+  string channelUsername = 2;
+}
+message DeleteChannelReq {
+  string channelUsername = 1;
+  string channelDomain = 2;
+}
+message EditConfigChannelReq {
+  string channelUsername = 1;
+  string userDomain = 2;
+  map<string, string> newConfig = 3;
+}
+message GetInfoChannelResp {
+  map<string, string> config = 1;
+  string creator = 4;
+}
+message GetPackInfoResp {
+  string title = 1;
+  string name = 2;
+  string thumb = 3;
+}
+message GetPacksResp {
+  repeated GetPacksResp.Pack packs = 1;
+  message Pack {
+    string title = 1;
+    string name = 2;
+    string thumb = 3;
+  }
+}
+message MyChannelsResp {
+  repeated string channels = 1;
+}
+message ProtoAuthCheckRequest {
+  string username = 1;
+  string password = 2;
+}
+message ProtoMamMessageRequest {
+  repeated string ids = 1;
+}
+message ProtoMamMessageResponse {
+  repeated ProtoMamMessageResponse.Message messages = 1;
+  message Message {
+    string id = 1;
+    string xml = 2;
+    string from = 4;
+  }
+}
+message ProtoMucConfigRequest {
+  repeated string groups = 1;
+}
+message ProtoMucConfigResponse {
+  repeated ProtoMucConfigResponse.ProtoMucInfo protoMucInfoResponse = 2;
+  message ProtoMucInfo {
+    string mucId = 1;
+    string version = 2;
+    map<string, string> aff = 3;
+    map<string, string> config = 4;
+  }
+}
+message ProtoMucInfoRequest {
+  repeated string groups = 1;
+}
+message ProtoMucInfoResponse {
+  repeated ProtoMucInfoResponse.ProtoMucInfo mucs = 2;
+  message ProtoMucInfo {
+    string mucId = 1;
+    string version = 2;
+    map<string, string> config = 4;
+  }
+}
+message ProtoMucListRequest {
+  string domain = 1;
+}
+message ProtoMucListResponse {
+  repeated string roomId = 2;
+}
+message ProtoMucMembersRequest {
+  string mucId = 1;
+}
+message ProtoMucMembersResponse {
+  repeated ProtoMucMembersResponse.ProtoMucMember protoMucMembers = 1;
+  message ProtoMucMember {
+    string user = 2;
+  }
+}
+message ProtoMucShareIdRequest {
+  string shareId = 1;
+}
+message ProtoMucShareIdResponse {
+  string luser = 1;
+  string lserver = 2;
+  string version = 3;
+  map<string, string> config = 4;
+  repeated string admins = 5;
+}
+message ProtoPresignedUrlResponse {
+  string put = 1;
+  string get = 2;
+}
+message ProtoUserAuthTokenRequest {
+  string username = 1;
+  string password = 2;
+  string version = 3;
+}
+message ProtoUserAuthTokenResponse {
+  string tokenString = 2;
+}
+message ProtoUserRegisterRequest {
+  string username = 1;
+  string clientToken = 2;
+  string code = 3;
+}
+message ProtoUserRegisterResponse {
+  string passwd = 1;
+  ProtoUserRegisterResponse.ProtoUserRoster protoUserReserve = 2;
+  message ProtoUserRoster {
+    string username = 1;
+    string alias = 2;
+    string pictureUrl = 3;
+    string description = 4;
+    string toDusId = 6;
+  }
+}
+message ProtoUserReserveRequest {
+  string username = 1;
+  string clientToken = 2;
+}
+message ProtoUsersMeRequest {
+  map<string, string> userInfo = 1;
+}
+message ProtoUsersRosterRequest {
+  repeated string numbers = 1;
+}
+message ProtoUsersRosterResponse {
+  repeated ProtoUsersRosterResponse.ProtoUserRoster userRoster = 1;
+  message ProtoUserRoster {
+    string username = 1;
+    map<string, string> userInfo = 3;
+    string toDusId = 4;
+  }
+}
+message SubscribeToChannelReq {
+  string channelUsername = 1;
+  string userDomain = 2;
+}
+

@@ -1,0 +1,10 @@
+# Artefactos de trabajo (se regeneran)
+/build/
+/uploads/
+/investigacion/apk/_work/
+__pycache__/
+*.pyc
+
+# Configuración y secretos locales
+.env
+*.log
