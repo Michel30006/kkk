@@ -70,9 +70,18 @@ bool DeliveryWorker::deliver(const JobRecord& job) {
   }
 
   std::string err;
-  if (!transport_.connect(err)) {
-    spdlog::error("job {}: no se pudo conectar al transporte: {}", job.job_id,
-                  err);
+  bool connected = false;
+  for (int attempt = 1; attempt <= std::max(1, config_.max_send_retries); ++attempt) {
+    if (transport_.connect(err)) {
+      connected = true;
+      break;
+    }
+    spdlog::warn("job {}: intento de conexión {} falló: {}", job.job_id, attempt, err);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000 * attempt));
+  }
+  if (!connected) {
+    spdlog::error("job {}: no se pudo conectar al transporte tras {} intentos: {}", job.job_id,
+                  std::max(1, config_.max_send_retries), err);
     store_.set_status(job.job_id, "failed_delivery", "transport_unavailable",
                       err, err);
     stats_.jobs_failed.fetch_add(1);

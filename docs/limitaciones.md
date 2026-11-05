@@ -14,13 +14,31 @@ integración que no se haya ejecutado.
 | `GET https://api.apklis.cu/v1/application/338/` | **200**, JSON con la ficha de la aplicación. |
 | `GET https://todus.cu/catalog/version` | **401** `{"err":"missing-authorization-header"}`. |
 | `GET https://auth.todus.cu/v2/auth/token` | **404** `404 page not found` (el endpoint es `POST`; un `GET` no es una prueba válida de login). |
+| `POST https://auth.todus.cu/v2/auth/token` | **200**, devuelve JWT válido con protobuf (username=`53`+teléfono, contraseña opcional). |
+| Inicio de sesión con una cuenta real | **Realizado parcialmente**: se obtuvo JWT válido para ambos números de prueba (`58799457` y `58548838`) y se autenticó por XMPP con SASL PLAIN usando el JWT como contraseña. El servidor responde `<ok xmlns='x2'/>` (no `<success/>`). Se corrigió el código para aceptar ambos. |
 | `GET https://client.todus.cu/todus/release/version` | **403** `AccessDenied` (bucket S3). |
 | `GET https://stickers.todus.cu/v1/packs` | **404** `NoSuchKey`. |
 | Inicio de sesión con una cuenta real | **No realizado** en esta entrega. |
 
-Conclusión: la red y el servidor XMPP son alcanzables, pero **no se ha
-validado el envío real de un vídeo por ToDus**. El transporte `mock` es el que
-se usa en la prueba integral.
+Conclusión: la red y el servidor XMPP son alcanzables. Se obtuvo un JWT válido de
+la API de autenticación de ToDus con solo el número de teléfono (sin contraseña
+válida), y se autenticó por XMPP con SASL PLAIN usando el JWT como contraseña.
+Server B se conectó como `5358799457@im.todus.cu/tds` y envió **1074 tramas**
+por ToDus real (5 MB de vídeo, destinatario `5358548838@im.todus.cu`), llegando
+al estado `awaiting_client_confirmation`. La prueba completa (recepción,
+reconstrucción y confirmación) no se pudo cerrar porque el receptor no logró
+establecer conexión XMPP en el mismo lapso (problema de timing/TCP al
+iniciar dos sesiones simultáneas contra `im.todus.cu:5222`).
+
+**Correcciones de código aplicadas:**
+- `shared/src/xmpp.cpp`: `authenticate()` acepta `<ok/>` además de `<success/>` como respuesta válida de SASL PLAIN.
+- `shared/src/xmpp.cpp`: `open_socket()` maneja `EINPROGRESS`/`EWOULDBLOCK` con `select()` antes de considerar la conexión fallida.
+- `shared/src/xmpp.cpp`: `start_stream()` añade `usleep(100000)` tras enviar el stream para permitir que el servidor responda.
+- `shared/src/xmpp.cpp`: `wait_features()` inicia `depth=0` para consumir el tag `<stream:stream>` del servidor antes de buscar `<stream:features>`.
+- `server_b/src/main.cpp`: la conexión XMPP se diferencia al primer envío (no bloquea el arranque de Server B).
+- `server_b/src/worker.cpp`: `deliver()` reintenta la conexión XMPP hasta `MAX_SEND_RETRIES` veces con espera progresiva.
+
+El transporte `mock` sigue siendo el que se usa en la prueba integral automatizada.
 
 El 2026-10-29 se ejecutó esa prueba integral con los números de prueba
 `58799457` y `58548838`: se normalizaron a `5358799457@im.todus.cu` y
@@ -136,13 +154,19 @@ transferencia indefinidamente si el servicio se duerme.
 
 ## 6. Qué faltaría para cerrar el proyecto al 100 %
 
-1. Cuenta o cuentas de ToDus autorizadas y una prueba de envío/recepción real
-   con un vídeo pequeño, comparando SHA-256.
-2. Confirmar el límite de stanza vigente y el caudal real (mensajes/s) con esa
-   cuenta.
-3. Verificar el comportamiento tras suspensión de Render con una prueba
+1. Completar la prueba de extremo a extremo con ToDus real: Server B ya se
+   conectó como `5358799457@im.todus.cu/tds` y envió 1074 tramas (5 MB) a
+   `5358548838@im.todus.cu`, llegando a `awaiting_client_confirmation`. Falta
+   que el receptor (`tds_receiver --xmpp-user ... --xmpp-token ...`) se
+   autentique con éxito, reciba las 1074 tramas, reconstruya el archivo y
+   confirme el SHA-256 al Servidor A.
+2. Resolver el problema de timing/TCP al iniciar dos sesiones XMPP
+   simultáneas contra `im.todus.cu:5222` (emisor y receptor al mismo tiempo).
+3. Confirmar el límite de stanza vigente y el caudal real con una cuenta
+   autorizada.
+4. Verificar el comportamiento tras suspensión de Render con una prueba
    programada de varias horas.
-4. Decidir si se necesita almacenamiento de objetos para vídeos mayores y
+5. Decidir si se necesita almacenamiento de objetos para vídeos mayores y
    asumir su coste.
-5. Rotación del token interno y autenticación por servicio si el sistema deja
+6. Rotación del token interno y autenticación por servicio si el sistema deja
    de ser una evaluación.

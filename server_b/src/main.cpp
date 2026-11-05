@@ -51,12 +51,10 @@ int main() {
     spdlog::error("transporte no disponible: {}", err);
     return 1;
   }
+  // No conectamos XMPP al arranque: el worker se conectará cuando necesite
+  // entregar. Esto evita bloquear el inicio del servidor si ToDus no responde.
   if (config.transport == "todus") {
-    if (!transport->connect(err)) {
-      // No es fatal: el worker reintenta en cada trabajo. Pero conviene que el
-      // operador lo sepa de inmediato.
-      spdlog::error("no se pudo conectar a ToDus al arrancar: {}", err);
-    }
+    spdlog::warn("transporte todus configurado; conexión XMPP diferida al primer envío");
   } else if (!transport->connect(err)) {
     spdlog::error("no se pudo preparar el transporte mock: {}", err);
     return 1;

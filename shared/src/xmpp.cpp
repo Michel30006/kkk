@@ -380,6 +380,30 @@ bool XmppClient::open_socket(std::string& err) {
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
     if (::connect(fd, it->ai_addr, it->ai_addrlen) == 0) break;
+    // Si el socket está en modo no bloqueante, connect() puede retornar
+    // EINPROGRESS: esperamos con select() a que la conexión se complete.
+    if (errno == EINPROGRESS || errno == EWOULDBLOCK) {
+      fd_set wfds;
+      FD_ZERO(&wfds);
+      FD_SET(fd, &wfds);
+      struct timeval tv2 = tv;
+      const int sel = ::select(fd + 1, nullptr, &wfds, nullptr, &tv2);
+      if (sel > 0) {
+        int so_err = 0;
+        socklen_t len = sizeof(so_err);
+        if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_err, &len) == 0 && so_err == 0) {
+          break; // conexión establecida
+        }
+        last_error = std::strerror(so_err != 0 ? so_err : errno);
+      } else if (sel == 0) {
+        last_error = "conexión TCP timeout";
+      } else {
+        last_error = std::strerror(errno);
+      }
+      ::close(fd);
+      fd = -1;
+      continue;
+    }
     last_error = std::strerror(errno);
     ::close(fd);
     fd = -1;
@@ -501,12 +525,16 @@ bool XmppClient::start_stream(bool with_declaration, std::string& err) {
             "' xmlns='" + kNsClient + "' xmlns:stream='" + kNsStream +
             "' version='1.0'>";
   buffer_.clear();
-  return send_raw(header, err);
+  if (!send_raw(header, err)) return false;
+  // Pequeña pausa para permitir que el servidor responda y OpenSSL reciba
+  // los datos antes de empezar a leer.
+  usleep(100000);
+  return true;
 }
 
 bool XmppClient::wait_features(std::string& features_raw, std::string& err) {
   const auto deadline = now_ms() + config_.io_timeout_ms;
-  int depth = 1;
+  int depth = 0;
   while (now_ms() < deadline) {
     for (auto& stanza : extract_xmpp_stanzas(buffer_, depth)) {
       if (xml_local_name(stanza) == "features") {
@@ -538,7 +566,7 @@ bool XmppClient::authenticate(std::string& err) {
   while (now_ms() < deadline) {
     for (auto& stanza : extract_xmpp_stanzas(buffer_, depth)) {
       const auto name = xml_local_name(stanza);
-      if (name == "success") return true;
+      if (name == "success" || name == "ok") return true;
       if (name == "failure") {
         err = "SASL PLAIN rechazado: " + stanza.substr(0, 200);
         return false;
