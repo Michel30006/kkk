@@ -200,6 +200,13 @@ void register_server_a_routes(JobStore& store, const Config& config,
         json body = job_public_json(job);
         if (store.delivered_count(job.job_id, delivered, count_err)) {
           body["delivered_chunks"] = delivered;
+          if (job.total_chunks > 0) {
+            body["progress_pct"] =
+                static_cast<double>(delivered) * 100.0 /
+                static_cast<double>(job.total_chunks);
+          } else {
+            body["progress_pct"] = 0.0;
+          }
         }
         cb(make_json(body));
       },

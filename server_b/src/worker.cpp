@@ -190,8 +190,11 @@ bool DeliveryWorker::send_all(const JobRecord& job, const std::string& jid) {
   std::int64_t last_renew = steady_ms();
   std::uint32_t emitted = 0;
   std::uint64_t sent_now = 0;
+  std::uint32_t last_reported_pct = 0;
   bool failed = false;
   std::string failure_detail;
+
+  spdlog::info("job {}: total de tramas a enviar: {}", job.job_id, total);
 
   const bool iterated = iterate_frames(
       parts, job.job_id, job.transfer_id, total, config_.max_stanza_bytes, 0,
@@ -239,8 +242,18 @@ bool DeliveryWorker::send_all(const JobRecord& job, const std::string& jid) {
         ++sent_now;
         stats_.frames_sent.fetch_add(1);
         stats_.bytes_sent.fetch_add(wire.size());
-        if (sent_now % 100 == 0)
-          spdlog::info("job {}: {}/{} tramas", job.job_id, index + 1, total);
+        if (total > 0) {
+          const auto pct =
+              static_cast<double>(sent_now) * 100.0 / static_cast<double>(total);
+          const auto pct_int = static_cast<std::uint32_t>(pct);
+          if (pct_int > last_reported_pct) {
+            spdlog::info("job {}: enviado {}/{} tramas ({}%)", job.job_id,
+                         sent_now, total, pct_int);
+            last_reported_pct = pct_int;
+          }
+        } else if (sent_now % 100 == 0) {
+          spdlog::info("job {}: {}/{} tramas", job.job_id, sent_now, total);
+        }
         if (config_.send_delay_ms > 0)
           std::this_thread::sleep_for(
               std::chrono::milliseconds(config_.send_delay_ms));

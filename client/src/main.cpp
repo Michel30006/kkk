@@ -79,6 +79,9 @@ void usage() {
       "  --xmpp-host HOST      por defecto im.todus.cu\n"
       "  --xmpp-port N         por defecto 5222\n"
       "  --insecure-tls        no verifica el certificado (sólo pruebas)\n"
+      "  --xmpp-listen DIR     conecta a ToDus y guarda todas las tramas TDS1 en\n"
+      "                        DIR antes de conocer el job_id. Evita perderse las\n"
+      "                        tramas que el servidor envía inmediatamente.\n"
       "  --help                esta ayuda\n";
 }
 
@@ -234,6 +237,7 @@ bool receive_xmpp(const Options& options, const tds::JobMeta& meta,
   std::uint32_t total = meta.total_chunks;
   bool done = false;
   std::atomic<std::uint64_t> rejected{0};
+  std::atomic<std::uint32_t> last_reported{0};
 
   client.set_message_callback([&](const tds::XmppMessage& message) {
     if (message.body.rfind("TDS1|", 0) != 0) return;
@@ -260,6 +264,8 @@ bool receive_xmpp(const Options& options, const tds::JobMeta& meta,
 
   std::cout << "Conectando a ToDus como " << options.xmpp_user << "...\n";
   if (!client.connect(err)) return false;
+  if (total > 0)
+    std::cout << "Total de tramas a recibir: " << total << "\n";
   std::cout << "Escuchando tramas del trabajo " << meta.job_id
             << " (Ctrl-C para salir)...\n";
 
@@ -271,13 +277,30 @@ bool receive_xmpp(const Options& options, const tds::JobMeta& meta,
       if (std::chrono::steady_clock::now() >= deadline) break;
       cv.wait_for(lock, std::chrono::milliseconds(500));
       if (!client.is_connected()) break;
+      // Progreso: mostrar cada 10 tramas nuevas o al cambiar el porcentaje.
+      const auto received = static_cast<std::uint32_t>(frames.size());
+      if (received > last_reported.load()) {
+        const auto pct = total > 0
+                             ? static_cast<double>(received) * 100.0 /
+                                   static_cast<double>(total)
+                             : 0.0;
+        std::cout << "Recibido: " << received << "/" << total
+                  << " (" << pct << "%)\n";
+        last_reported.store(received);
+      }
     }
   }
 
   {
     std::lock_guard<std::mutex> lock(mutex);
-    if (total > 0)
-      std::cout << "Tramas recibidas: " << frames.size() << "/" << total << "\n";
+    if (total > 0) {
+      const auto pct = static_cast<double>(frames.size()) * 100.0 /
+                       static_cast<double>(total);
+      std::cout << "Tramas recibidas: " << frames.size() << "/" << total
+                << " (" << pct << "%)\n";
+    } else {
+      std::cout << "Tramas recibidas: " << frames.size() << "\n";
+    }
     if (!done) {
       err = "tiempo agotado o conexión cerrada antes de completar";
       if (rejected.load() > 0)
@@ -343,6 +366,10 @@ bool listen_xmpp_save_frames(const Options& options,
     }
     out.write(message.body.data(), static_cast<std::streamsize>(message.body.size()));
     saved.fetch_add(1);
+    const auto s = saved.load();
+    if (s % 50 == 0) {
+      std::cout << "Tramas guardadas: " << s << "\n";
+    }
   });
 
   std::cout << "Conectando a ToDus como " << options.xmpp_user << "...\n";
