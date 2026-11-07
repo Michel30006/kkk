@@ -40,6 +40,7 @@ usa disco efímero para transportar datos entre servicios.
 | [docs/benchmarks.md](docs/benchmarks.md) | Duración, CPU y memoria medidos. |
 | [docs/limitaciones.md](docs/limitaciones.md) | Límites de Render/ToDus y riesgos confirmados. |
 | [docs/despliegue.md](docs/despliegue.md) | Despliegue con Docker, Compose y Render. |
+| [docs/manual_usuario.md](docs/manual_usuario.md) | Manual de usuario: desplegar en Render y pasar a producción. |
 | [docs/tabla-codificacion.md](docs/tabla-codificacion.md) | Tabla de codificación v1 y sus criterios. |
 | [especificacion_proyecto_transferencia_todus_2.md](especificacion_proyecto_transferencia_todus_2.md) | Especificación original del proyecto. |
 
