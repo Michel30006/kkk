@@ -13,6 +13,8 @@
 #include <condition_variable>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <map>
 #include <mutex>
@@ -54,6 +56,7 @@ struct Options {
   int xmpp_port{5222};
   bool xmpp_verify_tls{true};
   int wait_seconds{900};
+  std::string xmpp_listen_dir;
 };
 
 void usage() {
@@ -145,6 +148,8 @@ bool parse_args(int argc, char** argv, Options& options, std::string& err) {
       options.wait_seconds = std::atoi(value.c_str());
     } else if (arg == "--insecure-tls") {
       options.xmpp_verify_tls = false;
+    } else if (arg == "--xmpp-listen") {
+      if (!take_value(argc, argv, i, options.xmpp_listen_dir, err)) return false;
     } else {
       err = "opción desconocida: " + arg;
       return false;
@@ -152,7 +157,7 @@ bool parse_args(int argc, char** argv, Options& options, std::string& err) {
   }
 
   if (options.frames_dir.empty() && options.xmpp_user.empty()) {
-    err = "hace falta --frames DIR o --xmpp-user";
+    err = "hace falta --frames DIR, --xmpp-user o --xmpp-listen DIR";
     return false;
   }
   if (!options.server_a_url.empty() && options.job_id.empty()) {
@@ -291,6 +296,74 @@ bool receive_xmpp(const Options& options, const tds::JobMeta& meta,
   return true;
 }
 
+// Escucha XMPP y guarda todas las tramas TDS1 recibidas en un directorio,
+// sin filtrar por job_id. Útil para conectarse antes de crear el trabajo y
+// así no perderse las tramas que el servidor envía inmediatamente.
+bool listen_xmpp_save_frames(const Options& options,
+                             const std::string& listen_dir,
+                             int wait_seconds, std::string& err) {
+  namespace fs = std::filesystem;
+  std::error_code ec;
+  if (!fs::create_directories(listen_dir, ec) && ec) {
+    err = "no se pudo crear el directorio de escucha: " + ec.message();
+    return false;
+  }
+  tds::XmppConfig config;
+  config.host = options.xmpp_host;
+  config.domain = options.xmpp_host;
+  config.port = options.xmpp_port;
+  config.username = options.xmpp_user;
+  config.token = options.xmpp_token;
+  config.password = options.xmpp_password;
+  config.resource = options.xmpp_resource;
+  config.verify_tls = options.xmpp_verify_tls;
+
+  tds::XmppClient client(config);
+  std::atomic<std::uint64_t> saved{0};
+  std::atomic<std::uint64_t> rejected{0};
+  std::atomic<bool> stop{false};
+
+  client.set_message_callback([&](const tds::XmppMessage& message) {
+    if (stop.load()) return;
+    if (message.body.rfind("TDS1|", 0) != 0) return;
+    tds::Frame frame;
+    std::string parse_err;
+    if (!tds::parse_frame(message.body, frame, parse_err)) {
+      rejected.fetch_add(1);
+      return;
+    }
+    // Nombre del fichero: índice_chunk.job_id.tds
+    std::string fname = listen_dir + "/" +
+                        std::to_string(frame.chunk_index) + "." +
+                        frame.job_id + ".tds";
+    std::ofstream out(fname, std::ios::binary | std::ios::trunc);
+    if (!out) {
+      rejected.fetch_add(1);
+      return;
+    }
+    out.write(message.body.data(), static_cast<std::streamsize>(message.body.size()));
+    saved.fetch_add(1);
+  });
+
+  std::cout << "Conectando a ToDus como " << options.xmpp_user << "...\n";
+  if (!client.connect(err)) return false;
+  std::cout << "Escuchando tramas TDS1 (guardando en " << listen_dir
+            << ") ...\n";
+
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::seconds(wait_seconds);
+  while (std::chrono::steady_clock::now() < deadline && !stop.load()) {
+    if (!client.is_connected()) break;
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+  }
+
+  stop.store(true);
+  client.close();
+  std::cout << "Tramas guardadas: " << saved.load()
+            << " (rechazadas: " << rejected.load() << ")\n";
+  return saved.load() > 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -302,6 +375,22 @@ int main(int argc, char** argv) {
     std::cerr << "Error: " << err << "\n\n";
     usage();
     return 1;
+  }
+
+  // Modo --xmpp-listen: conectar y guardar todas las tramas TDS1 en un
+  // directorio sin necesidad de conocer el job_id de antemano. Esto resuelve
+  // la race condition: el receptor ya está escuchando cuando el servidor
+  // envía las tramas.
+  if (!options.xmpp_listen_dir.empty()) {
+    if (!listen_xmpp_save_frames(options, options.xmpp_listen_dir,
+                                 options.wait_seconds, err)) {
+      std::cerr << "Error: " << err << "\n";
+      return 2;
+    }
+    // Si también se pidió --frames y --confirm, seguir con la reconstrucción
+    // usando el directorio de escucha como origen de tramas.
+    if (options.frames_dir.empty()) return 0;
+    options.frames_dir = options.xmpp_listen_dir;
   }
 
   tds::JobMeta meta;

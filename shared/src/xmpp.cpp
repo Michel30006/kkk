@@ -660,6 +660,10 @@ bool XmppClient::connect(std::string& err) {
   std::string ignored;
   send_raw(std::string("<session xmlns='") + kNsSession + "'/>", ignored);
 
+  // Anunciar presencia con prioridad alta para que el servidor entregue
+  // los mensajes a este recurso y no a otros (ej. la app Android).
+  send_raw("<presence><priority>10</priority></presence>", ignored);
+
   {
     std::lock_guard<std::mutex> lock(state_mutex_);
     acked_.clear();

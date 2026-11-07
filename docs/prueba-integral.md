@@ -129,32 +129,52 @@ Todos se ejecutaron sobre las tramas reales del trabajo de 25 MiB:
 El receptor también valida que la trama pertenece al `job_id` y
 `transfer_id` esperados, y que la versión de codificación coincide.
 
-### Prueba con ToDus real (2026-11-05)
+### Prueba con ToDus real (2026-11-07)
 
-Se logró conectar al servidor XMPP de ToDus con `TRANSPORT=todus`:
+**Completado exitosamente: 5 MB de vídeo enviados y recibidos por ToDus real.**
 
-- **Autenticación:** se obtuvo un JWT válido de `POST https://auth.todus.cu/v2/auth/token` usando solo el número de teléfono (sin contraseña válida). Se autenticó por XMPP con SASL PLAIN usando el JWT como contraseña (`authcid = 53+telefono`).
-- **Conexión:** Server B se conectó como `5358799457@im.todus.cu/tds`.
-- **Envío:** se enviaron **1074 tramas** por ToDus real (5 MB de vídeo, destinatario `5358548838@im.todus.cu`), llegando al estado `awaiting_client_confirmation`.
+Flujo seguido:
 
-**No se completó:** la recepción, reconstrucción y confirmación por parte del cliente (`tds_receiver --xmpp-user ... --xmpp-token ...`) no logró establecer conexión XMPP en el mismo lapso (problema de timing al iniciar dos sesiones simultáneas contra `im.todus.cu:5222`).
+1. **JWTs frescos:** se obtuvo JWT válido de `POST https://auth.todus.cu/v2/auth/token` para ambos números (solo el número, sin contraseña válida).
+2. **Server B con `TRANSPORT=todus`:** se conectó como `5358799457@im.todus.cu/tds` usando `TODUS_TOKEN=<JWT_EMISOR>`.
+3. **Receptor en modo `--xmpp-listen`:** se conectó **antes** de crear el trabajo como `5358548838@im.todus.cu/tds-receiver` usando `TODUS_TOKEN=<JWT_RECEPTOR>`, guardando todas las tramas TDS1 en un directorio. Esto resuelve la race condition: Server B envía las tramas tan pronto como el trabajo llega a `ready_for_delivery`.
+4. **Crear trabajo:** `POST /jobs` con `recipient=58548838` y URL del vídeo (5 MB).
+5. **Esperar `awaiting_client_confirmation`:** Server B envió todas las tramas por ToDus real.
+6. **Reconstruir:** `tds_receiver --frames <dir> --job-id <ID> --confirm` leyó las 1074 tramas guardadas, verificó SHA-256 y confirmó el trabajo.
 
-Para una prueba completa con ToDus real se necesitan JWTs frescos para el emisor y el receptor, obtenidos justo antes de iniciar cada sesión, y resolver el conflicto de conexión TCP simultánea.
+Resultado: **SHA-256 idéntico, 5242880 bytes, byte a byte idéntico, confirmación enviada al Servidor A, estado `completed`/`cleaned`.**
+
+Pasos para repetir:
 
 ```bash
-# Obtener JWT (solo necesita el número, sin contraseña válida)
-# Ejemplo con Python: llamar POST https://auth.todus.cu/v2/auth/token
+# 1. Obtener JWTs (solo necesita el número, sin contraseña válida)
+# Ejemplo con Python: POST https://auth.todus.cu/v2/auth/token
 # con protobuf: field 1 = "5358799457", field 3 = "2.1.2"
+# Igual para "5358548838"
 
-# Server B con ToDus real
+# 2. Server B con ToDus real
 TRANSPORT=todus TODUS_USERNAME=5358799457 TODUS_TOKEN=<JWT_EMISOR> \
   build/server_b/tds_server_b
 
-# Receptor con ToDus real
+# 3. Receptor escuchando ANTES de crear el trabajo (modo listen)
 build/client/tds_receiver --xmpp-user 5358548838 \
-  --xmpp-token <JWT_RECEPTOR> --job-id <ID> --server-a <URL> \
-  --client-token <TOKEN> --out recuperado.bin --confirm
+  --xmpp-token <JWT_RECEPTOR> --xmpp-listen /tmp/frames --wait 300 &
+
+# 4. Crear el trabajo
+curl -X POST http://127.0.0.1:18181/jobs \
+  -H "X-Internal-Token: <TOKEN>" \
+  -d '{"url":"<http-url-video>","recipient":"58548838"}'
+
+# 5. Esperar awaiting_client_confirmation, luego reconstruir
+build/client/tds_receiver --frames /tmp/frames --job-id <ID> \
+  --server-a http://127.0.0.1:18181 --client-token <TOKEN> \
+  --out recuperado.bin --confirm
 ```
+
+**Notas importantes:**
+- El receptor debe conectarse **antes** de crear el trabajo. Si se conecta después, Server B ya habrá enviado las tramas y se perderán.
+- Se agregó una presencia XMPP con prioridad alta (`<priority>10</priority>`) para que el servidor entregue los mensajes a este recurso y no a otros (ej. la app Android).
+- Los JWTs expiran (aprox. 24 h); obtenlos justo antes de usarlos.
 
 ## Reproducir
 

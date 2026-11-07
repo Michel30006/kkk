@@ -19,15 +19,13 @@ usa disco efímero para transportar datos entre servicios.
 
 > **Estado real de la integración ToDus:** el transporte `mock` está probado
 > de extremo a extremo (2, 10 y 25 MiB byte a byte idénticos). El cliente
-> XMPP/ToDus está implementado y compila. Se logró conectar al servidor XMPP
-> real `im.todus.cu:5222` con `TRANSPORT=todus`: se obtuvo un JWT válido de
+> XMPP/ToDus está implementado y compila. **La integración ToDus real se ha
+> verificado el 2026-11-07:** se obtuvo un JWT válido de
 > `POST https://auth.todus.cu/v2/auth/token` con solo el número de teléfono
 > (sin contraseña válida), se autenticó por XMPP con SASL PLAIN usando el JWT
-> como contraseña, y Server B envió **1074 tramas por ToDus real** (5 MB de
-> vídeo a `5358548838@im.todus.cu`), llegando a `awaiting_client_confirmation`.
-> La prueba de extremo a extremo completa (recepción, reconstrucción y
-> confirmación por el cliente) no se cerró por un problema de timing al iniciar
-> dos sesiones XMPP simultáneas contra el servidor. Detalle en
+> como contraseña, y se envió y recibió **5 MB de vídeo de extremo a extremo**
+> (destinatario `5358548838@im.todus.cu`) con SHA-256 idéntico, byte a byte
+> idéntico, y confirmación al Servidor A. Detalle en
 > [docs/limitaciones.md](docs/limitaciones.md) y
 > [docs/prueba-integral.md](docs/prueba-integral.md).
 > El 2026-10-29 se probaron los dos números de prueba indicados con el
